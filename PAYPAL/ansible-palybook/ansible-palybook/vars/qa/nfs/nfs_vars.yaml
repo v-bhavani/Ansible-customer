@@ -1,0 +1,13 @@
+nfs_directories:
+  - { path: "/backup", clients: "10.0.0.19(rw,sync,no_root_squash) 10.0.0.20(rw,sync,no_root_squash)" }
+  - { path: "/hana/data", clients: "10.0.0.19(rw,sync,no_root_squash) 10.0.0.20(rw,sync,no_root_squash)" }
+  - { path: "/hana/log", clients: "10.0.0.19(rw,sync,no_root_squash) 10.0.0.20(rw,sync,no_root_squash)" }
+  - { path: "/hana/shared", clients: "10.0.0.19(rw,sync,no_root_squash) 10.0.0.20(rw,sync,no_root_squash)" }
+
+mount_directories:
+  - { path: "/backup" }
+  - { path: "/hana/data" }
+  - { path: "/hana/log" }
+  - { path: "/hana/shared" }
+
+nfs_server_ip: "10.0.0.18"

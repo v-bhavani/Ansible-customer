@@ -1,0 +1,14 @@
+---
+# NFS export directories and their clients
+nfs_directories:
+  - { path: "/sapmnt", clients: "10.0.0.18(rw,sync,no_root_squash) 10.0.0.19(rw,sync,no_root_squash) 10.0.0.20(rw,sync,no_root_squash)" }
+  - { path: "/softdump", clients: "10.0.0.18(rw,sync,no_root_squash) 10.0.0.19(rw,sync,no_root_squash) 10.0.0.20(rw,sync,no_root_squash)" }
+
+mount_directories:
+  - { path: "/sapmnt" }
+  - { path: "/softdump" }
+
+
+
+# NFS server IP address
+nfs_server_ip: "10.0.0.21"

@@ -1,0 +1,66 @@
+---
+- name: NFS Server Setup
+  hosts: "{{ nfs_source }}"  # Variable for NFS server
+  become: true
+  vars_files:
+    - - "../vars/{{ env }}"
+  tasks:
+    - name: Install NFS server dependencies
+      ansible.builtin.yum:
+        name:
+          - nfs-utils
+          - rpcbind
+        state: present
+
+    - name: Ensure NFS services are enabled and running
+      ansible.builtin.service:
+        name: "{{ item }}"
+        state: started
+        enabled: true
+      loop:
+        - nfs-server
+        - rpcbind
+
+    - name: Create export directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        mode: '0755'
+      loop: "{{ nfs_directories }}"
+
+    - name: Configure NFS exports
+      ansible.builtin.lineinfile:
+        path: /etc/exports
+        line: "{{ item.path }} {{ item.clients }}"
+        create: yes
+      loop: "{{ nfs_directories }}"
+
+    - name: Export NFS shares
+      ansible.builtin.command: exportfs -ra
+
+- name: NFS Client Setup
+  hosts: "{{ nfs_targets }}"  # Variable for NFS clients
+  become: true
+  vars_files:
+    - - "../vars/{{ env }}"
+  tasks:
+    - name: Install NFS client
+      ansible.builtin.yum:
+        name: nfs-utils
+        state: present
+
+    - name: Create mount points
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        mode: '0755'
+      loop: "{{ mount_directories }}"
+
+    - name: Mount NFS shares
+      ansible.builtin.mount:
+        path: "{{ item.path }}"
+        src: "{{ nfs_server_ip }}:{{ item.path }}"
+        fstype: nfs
+        opts: rw
+        state: mounted
+      loop: "{{ mount_directories }}"
