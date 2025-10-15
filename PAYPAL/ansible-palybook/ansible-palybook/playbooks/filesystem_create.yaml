@@ -1,14 +1,12 @@
-# playbooks/filesystem_create.yaml
 ---
 - name: Create Filesystem for Servers
-  hosts: all  # This makes it run on any specified host
+  hosts: all
   become: true
   vars_files:
     - "../vars/{{ env }}/filesystem_vars.yaml"
-    #- "../vars/{{ env }}/{{ inventory_hostname }}/filesystem_vars.yaml"
-    #- "../vars/{{ env }}/{{ group_names[0] }}/filesystem_vars.yaml"
+
   tasks:
-    - name: Install lvm2 dependency
+    - name: Ensure lvm2 is installed
       ansible.builtin.package:
         name: lvm2
         state: present
@@ -18,46 +16,65 @@
       register: disk_info
       loop: "{{ lvm_configs }}"
 
-    - name: Create physical volumes
+    - name: Build VG-to-Disk mapping
+      set_fact:
+        vg_disk_map: "{{ vg_disk_map | default({}) | combine({ item.item.vg_name: '/dev/' + item.stdout }) }}"
+      loop: "{{ disk_info.results }}"
+
+    - name: Get existing PVs
+      ansible.builtin.command: "pvs --noheadings -o pv_name"
+      register: existing_pvs
+      changed_when: false
+      failed_when: false
+
+    - name: Create physical volumes if not exist
       ansible.builtin.command:
         cmd: "pvcreate /dev/{{ item.stdout }}"
       loop: "{{ disk_info.results }}"
-      ignore_errors: true
+      when: "'/dev/' + item.stdout not in existing_pvs.stdout"
+      register: pvcreate_results
+      changed_when: "'/dev/' + item.stdout not in existing_pvs.stdout"
 
-    - name: Create mapping of VGs to disks
-      set_fact:
-        vg_disk_map: "{{ vg_disk_map | default({}) | combine({ item.item.vg_name: item.stdout }) }}"
-      loop: "{{ disk_info.results }}"
+    - name: Get existing VGs
+      ansible.builtin.command: "vgs --noheadings -o vg_name"
+      register: existing_vgs
+      changed_when: false
+      failed_when: false
 
-    - name: Create volume groups
+    - name: Create volume groups if not exist
       ansible.builtin.command:
-        cmd: "vgcreate {{ item.key }} /dev/{{ item.value }}"
+        cmd: "vgcreate {{ item.key }} {{ item.value }}"
       loop: "{{ vg_disk_map | dict2items }}"
-      ignore_errors: true
+      when: "item.key not in existing_vgs.stdout"
+      register: vgcreate_results
+      changed_when: "item.key not in existing_vgs.stdout"
 
-    - name: Wait for volume groups to be available
+    - name: Wait briefly for LVM metadata to settle
       ansible.builtin.pause:
         seconds: 2
 
-    - name: Create logical volumes
-      ansible.builtin.lvol:
-        vg: "{{ item.vg_name }}"
-        lv: "{{ item.lv_name }}"
-        size: "{{ item.size | default('100%FREE') }}"
+    - name: Create logical volumes if not exist
+      ansible.builtin.shell: |
+        if ! lvs --noheadings -o lv_name {{ item.vg_name }} | grep -qw {{ item.lv_name }}; then
+          lvcreate -L {{ item.size | default('100%FREE') }} -n {{ item.lv_name }} {{ item.vg_name }}
+        fi
       loop: "{{ lvm_configs }}"
+      changed_when: false
 
-    - name: Create directory mountpoints
+    - name: Ensure mountpoint directories exist
       ansible.builtin.file:
         path: "{{ item.mount_dir }}"
         state: directory
         mode: '0777'
       loop: "{{ lvm_configs }}"
 
-    - name: Format filesystems
-      ansible.builtin.command:
-        cmd: "mkfs.{{ item.fs_type | default('xfs') }} /dev/{{ item.vg_name }}/{{ item.lv_name }}"
+    - name: Create filesystem only if not formatted
+      ansible.builtin.shell: |
+        if ! blkid /dev/{{ item.vg_name }}/{{ item.lv_name }}; then
+          mkfs.{{ item.fs_type | default('xfs') }} /dev/{{ item.vg_name }}/{{ item.lv_name }}
+        fi
       loop: "{{ lvm_configs }}"
-      ignore_errors: true
+      changed_when: false
 
     - name: Mount filesystems
       ansible.builtin.mount:
